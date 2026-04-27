@@ -125,12 +125,13 @@ Whenever she picks the wrong basis she disturbs the state irreversibly — that 
 up as errors that Alice and Bob would not otherwise see.
 
 **The four BB84 states.**
-
-| Bit | Rectilinear basis `+` | Diagonal basis `×` |
-|-----|----------------------|--------------------|
-| 0   | `|0⟩` vertical          | `|+⟩` diagonal 45°   |
-| 1   | `|1⟩` horizontal        | `|−⟩` anti-diagonal 135° |
-
+""")
+        st.table(pd.DataFrame({
+            "Bit": ["0", "1"],
+            "Rectilinear basis (+)": ["|0⟩  vertical", "|1⟩  horizontal"],
+            "Diagonal basis (×)":    ["|+⟩  diagonal 45°", "|−⟩  anti-diagonal 135°"],
+        }))
+        st.markdown("""
 **The five phases:**
 1. Alice sends N photons, each in a randomly chosen state.
 2. Eve (optionally) intercepts, measures in a random basis, and re-sends.
@@ -159,200 +160,196 @@ up as errors that Alice and Bob would not otherwise see.
 
     if not run:
         st.info("Set parameters above and click **Run** to begin.")
-        st.stop()
+    else:
+        sim  = run_bb84(num_bits, eve_present, sample_fraction)
+        step = 0
 
-    sim  = run_bb84(num_bits, eve_present, sample_fraction)
-    step = 0
-
-    # Step 1 — Alice prepares
-    step += 1
-    st.header(f"Step {step} — Alice prepares and sends photons")
-    st.write(
-        "Alice generates a random bit string and independently picks a random basis per bit. "
-        "The (bit, basis) pair determines the polarisation state of each photon she sends."
-    )
-    df_alice = pd.DataFrame({
-        "Photon":      range(1, num_bits + 1),
-        "Alice bit":   sim["alice_bits"],
-        "Alice basis": sim["alice_bases"],
-        "State sent":  [PHOTON_STATE[(b, bs)]
-                        for b, bs in zip(sim["alice_bits"], sim["alice_bases"])],
-    })
-    st.dataframe(df_alice, use_container_width=True, hide_index=True)
-
-    # Step 2 — Eve (optional)
-    if eve_present:
+        # Step 1 — Alice prepares
         step += 1
-        st.header(f"Step {step} — Eve intercepts")
+        st.header(f"Step {step} — Alice prepares and sends photons")
         st.write(
-            "Eve measures each photon in a randomly chosen basis and re-sends a fresh photon. "
-            "She cannot clone the original — the no-cloning theorem forbids it. "
-            "When her basis matches Alice's (green), no disturbance is introduced. "
-            "When it differs (yellow), the photon she re-sends is in a different state, "
-            "which will eventually produce errors in the QBER check."
+            "Alice generates a random bit string and independently picks a random basis per bit. "
+            "The (bit, basis) pair determines the polarisation state of each photon she sends."
         )
-        df_eve = pd.DataFrame({
-            "Photon":        range(1, num_bits + 1),
-            "Alice basis":   sim["alice_bases"],
-            "Eve basis":     sim["eve_bases"],
-            "Bases match":   ["Yes" if a == e else "No"
-                              for a, e in zip(sim["alice_bases"], sim["eve_bases"])],
-            "Eve measured":  sim["eve_bits"],
-            "State re-sent": [PHOTON_STATE[(b, bs)]
-                              for b, bs in zip(sim["eve_bits"], sim["eve_bases"])],
+        df_alice = pd.DataFrame({
+            "Photon":      range(1, num_bits + 1),
+            "Alice bit":   sim["alice_bits"],
+            "Alice basis": sim["alice_bases"],
+            "State sent":  [PHOTON_STATE[(b, bs)]
+                            for b, bs in zip(sim["alice_bits"], sim["alice_bases"])],
         })
-        st.dataframe(df_eve.style.apply(hl_eve, axis=1),
-                     use_container_width=True, hide_index=True)
-        n_right = sum(a == e for a, e in zip(sim["alice_bases"], sim["eve_bases"]))
+        st.dataframe(df_alice, use_container_width=True, hide_index=True)
+
+        # Step 2 — Eve (optional)
+        if eve_present:
+            step += 1
+            st.header(f"Step {step} — Eve intercepts")
+            st.write(
+                "Eve measures each photon in a randomly chosen basis and re-sends a fresh photon. "
+                "She cannot clone the original — the no-cloning theorem forbids it. "
+                "When her basis matches Alice's (green), no disturbance is introduced. "
+                "When it differs (yellow), the photon she re-sends is in a different state, "
+                "which will eventually produce errors in the QBER check."
+            )
+            df_eve = pd.DataFrame({
+                "Photon":        range(1, num_bits + 1),
+                "Alice basis":   sim["alice_bases"],
+                "Eve basis":     sim["eve_bases"],
+                "Bases match":   ["Yes" if a == e else "No"
+                                  for a, e in zip(sim["alice_bases"], sim["eve_bases"])],
+                "Eve measured":  sim["eve_bits"],
+                "State re-sent": [PHOTON_STATE[(b, bs)]
+                                  for b, bs in zip(sim["eve_bits"], sim["eve_bases"])],
+            })
+            st.dataframe(df_eve.style.apply(hl_eve, axis=1),
+                         use_container_width=True, hide_index=True)
+            n_right = sum(a == e for a, e in zip(sim["alice_bases"], sim["eve_bases"]))
+            st.write(
+                f"Eve guessed the correct basis for **{n_right} / {num_bits}** photons. "
+                f"She introduced potential errors into the remaining {num_bits - n_right}."
+            )
+
+        # Step — Bob measures
+        step += 1
+        st.header(f"Step {step} — Bob measures")
         st.write(
-            f"Eve guessed the correct basis for **{n_right} / {num_bits}** photons. "
-            f"She introduced potential errors into the remaining {num_bits - n_right}."
+            "Bob independently picks a random measurement basis per photon. "
+            "Matching basis (green) → deterministic correct result. "
+            "Wrong basis (red) → random outcome; that photon is discarded in sifting."
+        )
+        df_bob = pd.DataFrame({
+            "Photon":       range(1, num_bits + 1),
+            "Alice basis":  sim["alice_bases"],
+            "Bob basis":    sim["bob_bases"],
+            "Bases match":  ["Yes" if a == b else "No"
+                             for a, b in zip(sim["alice_bases"], sim["bob_bases"])],
+            "Alice bit":    sim["alice_bits"],
+            "Bob result":   sim["bob_bits"],
+        })
+        st.dataframe(df_bob.style.apply(hl_bob, axis=1),
+                     use_container_width=True, hide_index=True)
+        n_match = sum(sim["sifted_mask"])
+        st.write(
+            f"Bob's basis matched Alice's for **{n_match} / {num_bits}** photons "
+            f"({100 * n_match / num_bits:.0f}%). Only these survive sifting."
         )
 
-    # Step — Bob measures
-    step += 1
-    st.header(f"Step {step} — Bob measures")
-    st.write(
-        "Bob independently picks a random measurement basis per photon. "
-        "Matching basis (green) → deterministic correct result. "
-        "Wrong basis (red) → random outcome; that photon is discarded in sifting."
-    )
-    df_bob = pd.DataFrame({
-        "Photon":       range(1, num_bits + 1),
-        "Alice basis":  sim["alice_bases"],
-        "Bob basis":    sim["bob_bases"],
-        "Bases match":  ["Yes" if a == b else "No"
-                         for a, b in zip(sim["alice_bases"], sim["bob_bases"])],
-        "Alice bit":    sim["alice_bits"],
-        "Bob result":   sim["bob_bits"],
-    })
-    st.dataframe(df_bob.style.apply(hl_bob, axis=1),
-                 use_container_width=True, hide_index=True)
-    n_match = sum(sim["sifted_mask"])
-    st.write(
-        f"Bob's basis matched Alice's for **{n_match} / {num_bits}** photons "
-        f"({100 * n_match / num_bits:.0f}%). Only these survive sifting."
-    )
-
-    # Step — Sifting
-    step += 1
-    st.header(f"Step {step} — Sifting")
-    st.write(
-        "Alice and Bob announce their bases over a public classical channel — not the bit values. "
-        "Photons where bases differ are discarded. The survivors form the sifted key. "
-        "Eve can hear this exchange, but learning the bases reveals nothing about the bit values."
-    )
-    sifted_idx = sim["sifted_idx"]
-    if not sifted_idx:
-        st.warning("No photons survived sifting. Try running again.")
-        st.stop()
-
-    df_sifted = pd.DataFrame({
-        "Original photon #": [i + 1 for i in sifted_idx],
-        "Shared basis":      [sim["alice_bases"][i] for i in sifted_idx],
-        "Alice bit":         sim["alice_sifted"],
-        "Bob bit":           sim["bob_sifted"],
-        "Agree":             ["Yes" if a == b else "No"
-                              for a, b in zip(sim["alice_sifted"], sim["bob_sifted"])],
-    })
-    st.dataframe(df_sifted.style.apply(hl_sifted, axis=1),
-                 use_container_width=True, hide_index=True)
-    n_sifted = len(sifted_idx)
-    n_agree  = sum(a == b for a, b in zip(sim["alice_sifted"], sim["bob_sifted"]))
-    st.write(
-        f"Sifted key: **{n_sifted} bits**. "
-        f"Alice and Bob agree on **{n_agree}** and disagree on **{n_sifted - n_agree}**."
-    )
-
-    # Step — QBER
-    step += 1
-    st.header(f"Step {step} — QBER estimation")
-    st.write(
-        f"A random sample of **{len(sim['sample_pos'])} sifted bits** "
-        f"({sample_fraction * 100:.0f}%) is compared publicly. "
-        "These bits are then permanently discarded. "
-        "The fraction that disagrees is the Quantum Bit Error Rate (QBER)."
-    )
-    df_sample = pd.DataFrame({
-        "Sifted position": [p + 1 for p in sim["sample_pos"]],
-        "Alice bit":       sim["sample_alice"],
-        "Bob bit":         sim["sample_bob"],
-        "Match":           ["Yes" if a == b else "No"
-                            for a, b in zip(sim["sample_alice"], sim["sample_bob"])],
-    })
-    st.dataframe(df_sample.style.apply(hl_sample, axis=1),
-                 use_container_width=True, hide_index=True)
-
-    qber_pct = sim["qber"] * 100
-    q1, q2, q3 = st.columns(3)
-    q1.metric("Bits sampled", len(sim["sample_pos"]))
-    q2.metric("Errors found", sim["errors"])
-    q3.metric("QBER",         f"{qber_pct:.1f}%")
-
-    if qber_pct > qber_threshold:
-        st.error(
-            f"QBER = {qber_pct:.1f}% exceeds {qber_threshold}%. Protocol aborted. "
-            "Alice and Bob discard everything and retry on a different channel."
+        # Step — Sifting
+        step += 1
+        st.header(f"Step {step} — Sifting")
+        st.write(
+            "Alice and Bob announce their bases over a public classical channel — not the bit values. "
+            "Photons where bases differ are discarded. The survivors form the sifted key. "
+            "Eve can hear this exchange, but learning the bases reveals nothing about the bit values."
         )
-    else:
-        st.success(
-            f"QBER = {qber_pct:.1f}% is within {qber_threshold}%. Channel accepted as secure."
-        )
+        sifted_idx = sim["sifted_idx"]
 
-    if eve_present:
-        st.info(
-            "Expected QBER with a full intercept-resend attack: **25%**. "
-            "Eve guesses the wrong basis 50% of the time; on those photons Bob's "
-            "measurement in Alice's basis is random → error probability = 0.5 × 0.5 = 0.25."
-        )
-    else:
-        st.info(
-            "Expected QBER with no eavesdropping on an ideal channel: **0%**. "
-            "Real systems see 1–5% from detector noise and optical misalignment."
-        )
+        if not sifted_idx:
+            st.warning("No photons survived sifting. Try running again.")
+        else:
+            df_sifted = pd.DataFrame({
+                "Original photon #": [i + 1 for i in sifted_idx],
+                "Shared basis":      [sim["alice_bases"][i] for i in sifted_idx],
+                "Alice bit":         sim["alice_sifted"],
+                "Bob bit":           sim["bob_sifted"],
+                "Agree":             ["Yes" if a == b else "No"
+                                      for a, b in zip(sim["alice_sifted"], sim["bob_sifted"])],
+            })
+            st.dataframe(df_sifted.style.apply(hl_sifted, axis=1),
+                         use_container_width=True, hide_index=True)
+            n_sifted = len(sifted_idx)
+            n_agree  = sum(a == b for a, b in zip(sim["alice_sifted"], sim["bob_sifted"]))
+            st.write(
+                f"Sifted key: **{n_sifted} bits**. "
+                f"Alice and Bob agree on **{n_agree}** and disagree on **{n_sifted - n_agree}**."
+            )
 
-    # Step — Final key
-    step += 1
-    st.header(f"Step {step} — Final shared key")
+            # Step — QBER
+            step += 1
+            st.header(f"Step {step} — QBER estimation")
+            st.write(
+                f"A random sample of **{len(sim['sample_pos'])} sifted bits** "
+                f"({sample_fraction * 100:.0f}%) is compared publicly. "
+                "These bits are then permanently discarded. "
+                "The fraction that disagrees is the Quantum Bit Error Rate (QBER)."
+            )
+            df_sample = pd.DataFrame({
+                "Sifted position": [p + 1 for p in sim["sample_pos"]],
+                "Alice bit":       sim["sample_alice"],
+                "Bob bit":         sim["sample_bob"],
+                "Match":           ["Yes" if a == b else "No"
+                                    for a, b in zip(sim["sample_alice"], sim["sample_bob"])],
+            })
+            st.dataframe(df_sample.style.apply(hl_sample, axis=1),
+                         use_container_width=True, hide_index=True)
 
-    if qber_pct > qber_threshold:
-        st.write("Protocol aborted due to high QBER. No key established.")
-        st.stop()
+            qber_pct = sim["qber"] * 100
+            q1, q2, q3 = st.columns(3)
+            q1.metric("Bits sampled", len(sim["sample_pos"]))
+            q2.metric("Errors found", sim["errors"])
+            q3.metric("QBER",         f"{qber_pct:.1f}%")
 
-    if not sim["alice_key"]:
-        st.warning("No bits remain after QBER sampling. Increase photon count and run again.")
-        st.stop()
+            if qber_pct > qber_threshold:
+                st.error(
+                    f"QBER = {qber_pct:.1f}% exceeds {qber_threshold}%. Protocol aborted. "
+                    "Alice and Bob discard everything and retry on a different channel."
+                )
+            else:
+                st.success(
+                    f"QBER = {qber_pct:.1f}% is within {qber_threshold}%. Channel accepted as secure."
+                )
 
-    st.write(
-        "The remaining sifted bits form the raw shared key. "
-        "A production system would follow this with **error correction** (e.g., Cascade or LDPC) "
-        "and **privacy amplification** (hashing the string down to remove any partial "
-        "information Eve gathered). Both are skipped here."
-    )
+            if eve_present:
+                st.info(
+                    "Expected QBER with a full intercept-resend attack: **25%**. "
+                    "Eve guesses the wrong basis 50% of the time; on those photons Bob's "
+                    "measurement in Alice's basis is random → error probability = 0.5 × 0.5 = 0.25."
+                )
+            else:
+                st.info(
+                    "Expected QBER with no eavesdropping on an ideal channel: **0%**. "
+                    "Real systems see 1–5% from detector noise and optical misalignment."
+                )
 
-    kc1, kc2 = st.columns(2)
-    with kc1:
-        st.write("**Alice's key**")
-        st.code("".join(str(b) for b in sim["alice_key"]))
-    with kc2:
-        st.write("**Bob's key**")
-        st.code("".join(str(b) for b in sim["bob_key"]))
+            # Step — Final key
+            step += 1
+            st.header(f"Step {step} — Final shared key")
 
-    n_key = len(sim["alice_key"])
-    if sim["alice_key"] == sim["bob_key"]:
-        st.success(f"Keys match. Shared secret: **{n_key} bits**.")
-    else:
-        n_diff = sum(a != b for a, b in zip(sim["alice_key"], sim["bob_key"]))
-        st.warning(f"Keys differ at {n_diff} / {n_key} positions. Error correction needed.")
+            if qber_pct > qber_threshold:
+                st.write("Protocol aborted due to high QBER. No key established.")
+            elif not sim["alice_key"]:
+                st.warning("No bits remain after QBER sampling. Increase photon count and run again.")
+            else:
+                st.write(
+                    "The remaining sifted bits form the raw shared key. "
+                    "A production system would follow this with **error correction** (e.g., Cascade or LDPC) "
+                    "and **privacy amplification** (hashing the string down to remove any partial "
+                    "information Eve gathered). Both are skipped here."
+                )
 
-    st.divider()
-    st.subheader("Run summary")
-    s1, s2, s3, s4, s5 = st.columns(5)
-    s1.metric("Photons sent",        num_bits)
-    s2.metric("Survived sifting",    n_sifted)
-    s3.metric("Sacrificed for QBER", len(sim["sample_pos"]))
-    s4.metric("Final key length",    n_key)
-    s5.metric("Key rate",            f"{n_key / num_bits * 100:.1f}%")
+                kc1, kc2 = st.columns(2)
+                with kc1:
+                    st.write("**Alice's key**")
+                    st.code("".join(str(b) for b in sim["alice_key"]))
+                with kc2:
+                    st.write("**Bob's key**")
+                    st.code("".join(str(b) for b in sim["bob_key"]))
+
+                n_key = len(sim["alice_key"])
+                if sim["alice_key"] == sim["bob_key"]:
+                    st.success(f"Keys match. Shared secret: **{n_key} bits**.")
+                else:
+                    n_diff = sum(a != b for a, b in zip(sim["alice_key"], sim["bob_key"]))
+                    st.warning(f"Keys differ at {n_diff} / {n_key} positions. Error correction needed.")
+
+                st.divider()
+                st.subheader("Run summary")
+                s1, s2, s3, s4, s5 = st.columns(5)
+                s1.metric("Photons sent",        num_bits)
+                s2.metric("Survived sifting",    n_sifted)
+                s3.metric("Sacrificed for QBER", len(sim["sample_pos"]))
+                s4.metric("Final key length",    n_key)
+                s5.metric("Key rate",            f"{n_key / num_bits * 100:.1f}%")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -495,8 +492,8 @@ uniformly at random. She prepares photon *i* in the state determined by *(bᵢ, 
 
 | bᵢ | θᵢ = + (rectilinear) | θᵢ = × (diagonal) |
 |----|---------------------|--------------------|
-| 0  | \|0⟩ vertical         | \|+⟩ 45°            |
-| 1  | \|1⟩ horizontal       | \|−⟩ 135°           |
+| 0  | \\|0⟩ vertical         | \\|+⟩ 45°            |
+| 1  | \\|1⟩ horizontal       | \\|−⟩ 135°           |
 
 She sends the photons one at a time through the quantum channel (an optical fibre or free-space
 link). *No classical information travels on this channel during transmission.*
