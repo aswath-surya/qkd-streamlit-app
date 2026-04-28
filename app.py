@@ -360,9 +360,10 @@ with tab_educator:
 
     st.subheader("Teaching Modules for QKD Curriculum")
     st.write(
-        "Five self-contained modules covering the prerequisite physics and mathematics, "
-        "the BB84 protocol in depth, its security guarantees, and real-world deployment context. "
-        "Each module includes learning objectives, content, and suggested discussion questions."
+        "Eight self-contained modules: classical cryptography foundations (RSA, ECC, Shor's algorithm), "
+        "the quantum mechanics needed for QKD, the BB84 protocol in depth, its security guarantees, "
+        "and real-world deployment context. Each module includes learning objectives, content, and "
+        "suggested discussion questions."
     )
 
     # ── Module 1: Why do we need secure key exchange? ────────────────────────
@@ -411,8 +412,273 @@ A sufficiently powerful computer running the right algorithm could break them.
    classically? How does this scale on a quantum computer running Shor's algorithm?
 """)
 
-    # ── Module 2: Quantum mechanics background ────────────────────────────────
-    with st.expander("Module 2 — Quantum mechanics background for QKD"):
+    # ── Module 2: RSA ─────────────────────────────────────────────────────────
+    with st.expander("Module 2 — RSA: Key Generation, Encryption, and the Factoring Problem"):
+        st.markdown("""
+**Learning objectives**
+- Describe RSA key generation step by step.
+- Explain encryption and decryption using modular exponentiation.
+- Identify the integer factoring problem as RSA's security foundation.
+- Explain why larger key sizes slow down classical factoring but not Shor's algorithm.
+
+---
+
+**What problem does RSA solve?**
+
+Before RSA (Rivest, Shamir, Adleman, 1977), two parties had to share a secret key in advance —
+by courier, phone, or in person. RSA allows two strangers to exchange encrypted messages over
+a public channel with no prior contact.
+
+**Key generation**
+
+1. Choose two large distinct primes *p* and *q* (each 1024–2048 bits in practice).
+2. Compute the modulus *n = p × q*.
+3. Compute Euler's totient *φ(n) = (p−1)(q−1)*.
+4. Choose a public exponent *e* such that *1 < e < φ(n)* and *gcd(e, φ(n)) = 1*.
+   In practice *e = 65537* is almost universally used (small, fixed, odd, no small prime factors).
+5. Compute the private exponent *d* as the modular inverse of *e*: *d = e⁻¹ mod φ(n)*.
+   This means *e × d ≡ 1 (mod φ(n))*.
+
+**Public key**: *(n, e)* — shared openly.
+**Private key**: *(n, d)* — kept secret. (Equivalently, the factorisation *p, q*.)
+
+**Encryption** (sender knows *(n, e)*):
+*c = mᵉ mod n*
+where *m* is the message encoded as an integer with *m < n*.
+
+**Decryption** (recipient knows *(n, d)*):
+*m = cᵈ mod n*
+
+This works because Euler's theorem guarantees *(mᵉ)ᵈ = m^(ed) ≡ m (mod n)* when *gcd(m, n) = 1*.
+
+**Why it is secure (classically)**
+
+To recover *d* from the public key *(n, e)*, an attacker must compute *φ(n) = (p−1)(q−1)*,
+which requires knowing *p* and *q* — i.e., factoring *n*.
+
+The best known classical factoring algorithm, the General Number Field Sieve (GNFS), runs in
+sub-exponential time roughly *exp(O((log n)^(1/3) (log log n)^(2/3)))*.
+For a 2048-bit modulus, factoring would take far longer than the age of the universe on any
+classical computer. This is why RSA-2048 is currently considered safe against classical adversaries.
+
+**Practical notes**
+- Raw RSA (textbook RSA) is not semantically secure. Real implementations use OAEP padding for
+  encryption and PSS padding for signatures.
+- RSA private-key operations (decryption, signing) are computationally expensive: ~1000× slower
+  than AES for equivalent data. In practice, RSA encrypts a symmetric key; the symmetric key then
+  encrypts the bulk data.
+- NIST recommends RSA-3072 or above for new systems; RSA-2048 is acceptable through 2030.
+
+---
+
+**Discussion questions**
+1. Why can't the attacker simply compute *d = e⁻¹ mod n* directly (without factoring *n*)?
+   What piece of information are they missing?
+2. If *p* and *q* are accidentally chosen to be close together (close prime attack), what happens?
+   How does this motivate the requirement that *p* and *q* be "far apart"?
+3. RSA signing is: *s = mᵈ mod n*; verification is: *m = sᵉ mod n*.
+   How does this differ structurally from encryption? What could go wrong if the same key pair
+   is used for both encryption and signing?
+""")
+
+    # ── Module 3: ECC ─────────────────────────────────────────────────────────
+    with st.expander("Module 3 — Elliptic Curve Cryptography (ECC)"):
+        st.markdown("""
+**Learning objectives**
+- Describe what an elliptic curve is over a finite field.
+- Explain point addition geometrically and algebraically.
+- State the Elliptic Curve Discrete Logarithm Problem (ECDLP).
+- Describe ECDH key exchange and ECDSA signing.
+- Compare ECC and RSA in terms of key size, performance, and security assumptions.
+
+---
+
+**What is an elliptic curve?**
+
+An elliptic curve over a finite field *F_p* (integers mod a prime *p*) is the set of points
+*(x, y)* satisfying:
+
+*y² ≡ x³ + ax + b (mod p)*
+
+together with a special "point at infinity" *O* that acts as the group identity.
+
+For cryptographic use, the parameters *(a, b, p)* are fixed and public. A *generator point* *G*
+on the curve is also specified. Every party uses the same curve and the same *G*.
+
+**Point addition**
+
+Given two points *P* and *Q* on the curve, their sum *P + Q* is defined geometrically: draw the
+line through *P* and *Q*, find its third intersection with the curve, and reflect that point over
+the x-axis. For *P + P* (point doubling), use the tangent line at *P* instead.
+
+This operation is closed (the result is always on the curve), associative, commutative, and has
+an identity element *O*. The curve points under addition form an abelian group.
+
+**Scalar multiplication**
+
+For a positive integer *k* and point *P*, define:
+*kP = P + P + ... + P* (*k* times)
+
+This can be computed efficiently using double-and-add (analogous to fast exponentiation): O(log k)
+point doublings and additions. For *k* of 256 bits, this takes roughly 384 operations.
+
+**The Elliptic Curve Discrete Logarithm Problem (ECDLP)**
+
+Given a generator point *G* and a public point *Q = kG*, find *k*.
+
+This is believed to be computationally hard. No sub-exponential classical algorithm for ECDLP
+is known (unlike for ordinary discrete log, where index calculus works). This means ECC achieves
+the same security level as RSA with much smaller keys:
+
+| Security level | RSA key size | ECC key size |
+|---------------|-------------|-------------|
+| 128-bit        | 3072 bits    | 256 bits     |
+| 192-bit        | 7680 bits    | 384 bits     |
+| 256-bit        | 15360 bits   | 521 bits     |
+
+**ECDH key exchange**
+
+1. Alice picks private key *a* (a random integer); computes public key *A = aG*.
+2. Bob picks private key *b*; computes public key *B = bG*.
+3. They exchange *A* and *B* over a public channel.
+4. Alice computes *aB = a(bG) = abG*.
+5. Bob computes *bA = b(aG) = abG*.
+6. Both arrive at the same shared secret point *abG*. Eve sees *A* and *B* but cannot compute
+   *abG* without solving ECDLP.
+
+**ECDSA digital signatures** (in brief)
+
+To sign message hash *h* with private key *d*:
+1. Pick a random *k*, compute *R = kG*, let *r = R_x mod n*.
+2. Compute *s = k⁻¹(h + dr) mod n*.
+3. Signature is *(r, s)*.
+
+Verification uses the public key *Q = dG* to confirm the relationship without revealing *d*.
+Critical: *k* must be uniformly random and never reused. The Sony PlayStation 3 private key was
+extracted in 2010 because their ECDSA implementation used a fixed *k*.
+
+**Common curves**
+- **NIST P-256 / secp256r1** — standard in TLS, used by most browsers and servers.
+- **X25519 (Curve25519)** — preferred for ECDH; designed to resist several implementation
+  attacks; now widely used in TLS 1.3, Signal, WireGuard.
+- **secp256k1** — Bitcoin and Ethereum signing (ECDSA).
+
+---
+
+**Discussion questions**
+1. RSA has a trapdoor (the factorisation). What is the analogous trapdoor in ECC?
+   Why is the ECDLP believed to be hard while ordinary integer factoring has sub-exponential
+   classical algorithms?
+2. Why does reusing *k* in ECDSA leak the private key? Derive the formula.
+   Why is X25519 designed to avoid this class of mistake?
+3. Compared to NIST P-256, Curve25519 was designed with different priorities.
+   What are they, and what does this tell you about the difference between a standard being
+   *secure* and being *trustworthy*?
+""")
+
+    # ── Module 4: Shor's Algorithm ────────────────────────────────────────────
+    with st.expander("Module 4 — Shor's Algorithm: How Quantum Computers Break RSA and ECC"):
+        st.markdown("""
+**Learning objectives**
+- Explain at a conceptual level how Shor's algorithm reduces integer factoring to period finding.
+- Describe why the Quantum Fourier Transform makes period finding efficient on a quantum computer.
+- State the resource requirements for breaking RSA-2048.
+- Explain why Shor's algorithm also breaks ECC and Diffie-Hellman.
+
+---
+
+**Historical context**
+
+In 1994, Peter Shor (then at Bell Labs) published an algorithm that runs on a quantum computer
+and solves two problems in polynomial time:
+
+1. **Integer factoring** — given *n*, find *p* and *q* such that *n = p × q*.
+2. **Discrete logarithm** — given *g, h, p*, find *x* such that *g^x ≡ h (mod p)*.
+
+These two problems are the security foundations of RSA and Diffie-Hellman respectively.
+The elliptic curve discrete logarithm problem (ECDLP) is also solved by a generalisation of
+Shor's discrete log algorithm. In other words, Shor's algorithm breaks RSA, DH, ECDH, and ECDSA
+simultaneously.
+
+**From factoring to period finding**
+
+Shor's key insight is a classical reduction: factoring *n* is equivalent to finding the *period*
+of the function:
+
+*f(x) = aˣ mod n*
+
+for a randomly chosen *a* coprime to *n*.
+
+The period *r* is the smallest positive integer such that *aʳ ≡ 1 (mod n)*.
+Once *r* is known, one can compute *gcd(a^(r/2) ± 1, n)* — this yields non-trivial factors of
+*n* with high probability (roughly 50% per attempt; a few repetitions suffice).
+
+Finding *r* classically is just as hard as factoring — it requires evaluating *f* exponentially
+many times. The quantum speedup comes from finding *r* efficiently.
+
+**Where the quantum speedup comes from**
+
+A quantum computer can prepare a superposition of all inputs simultaneously:
+
+*|0⟩ → (1/√N) Σ|x⟩*
+
+and evaluate *f(x)* for all *x* at once, producing:
+
+*(1/√N) Σ|x⟩|f(x)⟩*
+
+This is not useful directly — measuring collapses it to a single value. But applying the
+**Quantum Fourier Transform (QFT)** to the *x* register transforms this superposition into one
+that is peaked at multiples of *1/r*. Measuring then gives a value close to *j/r* for some
+integer *j*, from which *r* can be extracted using classical continued fraction algorithms.
+
+The classical DFT runs in O(N log N) for N points. The QFT runs in O(log² N) on a quantum
+computer — an exponential improvement. This is what gives Shor's algorithm its power.
+
+**Resource requirements**
+
+Breaking RSA-2048 with Shor's algorithm requires approximately:
+- **~4,000 logical qubits** (qubits with error correction applied).
+- **~10⁹ gate operations** (T-gates, which are expensive to implement fault-tolerantly).
+- Each logical qubit requires roughly **1,000–10,000 physical qubits** depending on the error
+  correction code and hardware error rates.
+- Total physical qubit count: **millions**.
+
+Current state-of-the-art quantum processors have a few hundred to low thousands of physical
+qubits with error rates around 0.1–1%, far from the ~0.01% threshold needed for the error
+correction codes used in Shor estimates. The consensus timeline for a cryptographically relevant
+quantum computer (CRQC) is approximately **10–20 years**, with substantial uncertainty.
+
+**Grover's algorithm (a separate threat to symmetric cryptography)**
+
+Grover's algorithm provides a quadratic speedup for unstructured search. For a symmetric key of
+length *n* bits, Grover's reduces effective security from *n* bits to *n/2* bits:
+- AES-128 → ~64-bit security against a quantum adversary.
+- AES-256 → ~128-bit security (still safe; NIST retains AES-256 as quantum-resistant).
+
+Grover is a much smaller threat than Shor: doubling key sizes compensates entirely. Post-quantum
+symmetric cryptography is primarily a matter of key length, not algorithm replacement.
+
+**The difference between breaking RSA and breaking symmetric encryption**
+
+Shor's provides an *exponential* speedup for factoring (polynomial vs exponential time).
+Grover's provides only a *quadratic* speedup for search. This is why RSA and ECC require complete
+replacement, while AES-256 and SHA-3 can be retained with appropriate parameter choices.
+
+---
+
+**Discussion questions**
+1. Shor's algorithm is probabilistic — it succeeds with probability roughly 1/2 per run and must
+   be repeated. How does this affect the practical time to break RSA-2048?
+2. The QFT requires coherent superposition across many qubits for many gate operations.
+   What physical challenges make this hard to achieve, and how do quantum error correction
+   codes address them?
+3. Grover's algorithm is sometimes described as "breaking" AES-128. Is this accurate?
+   What would an attacker actually need to do to decrypt AES-128-encrypted data with Grover's
+   algorithm, and why is this impractical even with a CRQC?
+""")
+
+    # ── Module 5: Quantum mechanics background ────────────────────────────────
+    with st.expander("Module 5 — Quantum mechanics background for QKD"):
         st.markdown("""
 **Learning objectives**
 - Define quantum superposition and explain what "collapsing" a superposition means.
@@ -474,8 +740,8 @@ The analogy breaks down (dice are classical) but it conveys the irreversibility 
    Are they the same statement?
 """)
 
-    # ── Module 3: The BB84 protocol ───────────────────────────────────────────
-    with st.expander("Module 3 — The BB84 protocol in depth"):
+    # ── Module 6: The BB84 protocol ───────────────────────────────────────────
+    with st.expander("Module 6 — The BB84 protocol in depth"):
         st.markdown("""
 **Learning objectives**
 - Describe each of the five phases of BB84 with physical justification.
@@ -548,8 +814,8 @@ The final string is the **quantum-secure shared key**.
    At what *f* does QBER cross the 11% threshold? What does this imply for Eve's information gain?
 """)
 
-    # ── Module 4: Security analysis ───────────────────────────────────────────
-    with st.expander("Module 4 — Security: information-theoretic vs computational"):
+    # ── Module 7: Security analysis ───────────────────────────────────────────
+    with st.expander("Module 7 — Security: information-theoretic vs computational"):
         st.markdown("""
 **Learning objectives**
 - Contrast information-theoretic security with computational security.
@@ -604,8 +870,8 @@ The proof assumes:
 3. "Quantum cryptography is unbreakable." Critique this claim precisely.
 """)
 
-    # ── Module 5: Real-world deployments ─────────────────────────────────────
-    with st.expander("Module 5 — Real-world QKD deployments and open problems"):
+    # ── Module 8: Real-world deployments ─────────────────────────────────────
+    with st.expander("Module 8 — Real-world QKD deployments and open problems"):
         st.markdown("""
 **Learning objectives**
 - Describe the main physical implementations of QKD (fibre, free-space, satellite).
@@ -665,9 +931,9 @@ Free-space systems are limited by atmospheric turbulence and require line-of-sig
 
     st.divider()
     st.caption(
-        "Suggested course sequence: Modules 1–2 as prerequisites (classical + quantum background), "
-        "then Module 3 (protocol), Module 4 (security theory), Module 5 (applications). "
-        "The Students tab provides a live simulator to accompany Module 3."
+        "Suggested course sequence: Modules 1–4 as prerequisites (classical crypto, RSA, ECC, Shor's), "
+        "Module 5 (quantum mechanics), Module 6 (BB84 protocol), Module 7 (security theory), "
+        "Module 8 (applications). The Students tab provides a live simulator to accompany Module 6."
     )
 
 
@@ -761,6 +1027,11 @@ If *Z + Y > X*, you have a problem. For data with 10-year confidentiality requir
 After an eight-year global evaluation process, NIST published three finalized **post-quantum
 cryptography (PQC)** standards in August 2024. These are drop-in replacements for current
 public-key algorithms and require only software changes — no new hardware infrastructure.
+Full documentation is available on the NIST CSRC website:
+[FIPS 203 (ML-KEM)](https://csrc.nist.gov/pubs/fips/203/final) ·
+[FIPS 204 (ML-DSA)](https://csrc.nist.gov/pubs/fips/204/final) ·
+[FIPS 205 (SLH-DSA)](https://csrc.nist.gov/pubs/fips/205/final) ·
+[PQC project overview](https://csrc.nist.gov/projects/post-quantum-cryptography)
 """)
 
     pqc_data = pd.DataFrame({
@@ -859,17 +1130,19 @@ distinction is important for investment and procurement decisions.
     with col_r1:
         st.markdown("""
 **United States**
-- **NSA CNSA 2.0** (Sep 2022): mandates migration to PQC for national security systems by 2033.
+- **[NSA CNSA 2.0](https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF)** (Sep 2022): mandates migration to PQC for national security systems by 2033.
   NSA explicitly recommends against procuring new QKD for government use pending further study.
-- **CISA/NIST** *Migration to Post-Quantum Cryptography* (2022): inventory and prioritisation
-  guidance for critical infrastructure.
-- **OMB M-23-02** (Dec 2022): requires federal agencies to submit quantum-readiness inventories.
+- **[CISA Post-Quantum Cryptography Initiative](https://www.cisa.gov/topics/risk-management/quantum)**: inventory and prioritisation
+  guidance for critical infrastructure, including the
+  [Quantum-Readiness Migration factsheet](https://www.cisa.gov/resources-tools/resources/quantum-readiness-migration-post-quantum-cryptography).
+- **[OMB M-23-02](https://www.whitehouse.gov/wp-content/uploads/2022/11/M-23-02-M-Memo-on-Migrating-to-Post-Quantum-Cryptography.pdf)** (Nov 2022): requires federal agencies to inventory cryptographic systems and designate a migration lead.
 - **SEC**: no specific PQC rule yet, but cybersecurity disclosure rules (2023) implicitly cover
   material quantum risks.
 
 **European Union**
-- **ENISA** *Post-Quantum Cryptography — Current State and Quantum Mitigation* (2021, updated 2023):
-  recommends hybrid (classical + PQC) as the transition approach.
+- **[ENISA Post-Quantum Cryptography: Current State and Quantum Mitigation](https://www.enisa.europa.eu/publications/post-quantum-cryptography-current-state-and-quantum-mitigation)**
+  (2021, updated 2022): recommends hybrid (classical + PQC) as the transition approach.
+  See also: [PQC Integration Study](https://www.enisa.europa.eu/publications/post-quantum-cryptography-integration-study).
 - **ECB**: no dedicated PQC regulation; included in broader cyber resilience expectations (TIBER-EU).
 - **DORA** (Digital Operational Resilience Act, effective Jan 2025): requires financial entities
   to manage ICT risk including emerging technology threats — quantum readiness will fall under scope.
@@ -878,8 +1151,10 @@ distinction is important for investment and procurement decisions.
     with col_r2:
         st.markdown("""
 **United Kingdom**
-- **NCSC** *Preparing for Post-Quantum Cryptography* (2023): recommends beginning migration planning
-  now; endorses NIST PQC standards.
+- **[NCSC: Preparing for Quantum-Safe Cryptography](https://www.ncsc.gov.uk/whitepaper/quantum-safe-cryptography)**:
+  sets out the NCSC position and recommends beginning migration planning now; endorses NIST PQC standards.
+  See also: [Next steps in preparing for PQC](https://www.ncsc.gov.uk/whitepaper/next-steps-preparing-for-post-quantum-cryptography)
+  and [PQC migration timelines](https://www.ncsc.gov.uk/guidance/pqc-migration-timelines).
 - **Bank of England / PRA**: no specific QKD/PQC guidance yet; watch for CBEST and cyber stress
   testing updates.
 - **FCA**: cyber and operational resilience rules require firms to identify and manage technology
@@ -888,8 +1163,10 @@ distinction is important for investment and procurement decisions.
 **Industry bodies**
 - **SWIFT**: quantum-readiness working group; expects PQC to be incorporated into SWIFT standards
   as NIST standards mature.
-- **ETSI QKD Industry Specification Group**: produces interoperability specs (GS QKD 004, 014) for
-  QKD network integration.
+- **[ETSI QKD Industry Specification Group](https://www.etsi.org/technologies/quantum-key-distribution)**:
+  produces interoperability specs including
+  [GS QKD 004](https://www.etsi.org/deliver/etsi_gs/QKD/001_099/004/02.01.01_60/gs_qkd004v020101p.pdf)
+  (application interface) for QKD network integration.
 - **ISO/IEC JTC 1/SC 27**: developing international PQC standards (ISO/IEC 14888-x family) aligned
   with NIST output.
 - **BIS / CPMI**: no dedicated quantum guidance; systemic risk from quantum threats to payment
@@ -925,8 +1202,18 @@ consistent with guidance from NCSC, CISA, and NIST.
     )
 
     st.divider()
-    st.caption(
-        "Sources: NIST FIPS 203/204/205 (Aug 2024), NSA CNSA 2.0 (Sep 2022), NCSC Quantum guidance (2023), "
-        "ENISA PQC report (2023), ETSI GS QKD 014, Mosca (2018) 'Cybersecurity in an era with quantum computers'. "
-        "This page is for educational purposes and does not constitute regulatory or legal advice."
+    st.markdown(
+        "<small>Sources: "
+        "[NIST FIPS 203](https://csrc.nist.gov/pubs/fips/203/final), "
+        "[FIPS 204](https://csrc.nist.gov/pubs/fips/204/final), "
+        "[FIPS 205](https://csrc.nist.gov/pubs/fips/205/final) (Aug 2024) · "
+        "[NSA CNSA 2.0 FAQ](https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF) (Sep 2022) · "
+        "[NCSC Quantum-Safe Cryptography](https://www.ncsc.gov.uk/whitepaper/quantum-safe-cryptography) · "
+        "[ENISA PQC Report](https://www.enisa.europa.eu/publications/post-quantum-cryptography-current-state-and-quantum-mitigation) · "
+        "[CISA PQC Initiative](https://www.cisa.gov/topics/risk-management/quantum) · "
+        "[OMB M-23-02](https://www.whitehouse.gov/wp-content/uploads/2022/11/M-23-02-M-Memo-on-Migrating-to-Post-Quantum-Cryptography.pdf) · "
+        "[ETSI QKD](https://www.etsi.org/technologies/quantum-key-distribution) · "
+        "Mosca (2018) 'Cybersecurity in an era with quantum computers'. "
+        "This page is for educational purposes and does not constitute regulatory or legal advice.</small>",
+        unsafe_allow_html=True,
     )
