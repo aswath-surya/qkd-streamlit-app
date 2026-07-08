@@ -4,14 +4,46 @@ import pandas as pd
 
 st.set_page_config(page_title="QKD Interactive Platform", layout="wide")
 
-st.title("Quantum Key Distribution — Interactive Platform")
+# Vivid visual styling for the Students tab (pops on a black background).
+st.markdown("""
+<style>
+/* photon cards */
+.prow  { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 4px; }
+.pcard { width:50px; height:64px; border-radius:10px; background:#0d1117;
+         border:2px solid #30363d; display:flex; flex-direction:column;
+         align-items:center; justify-content:center; }
+.pcard .glyph { font-size:30px; line-height:1; font-weight:800; }
+.pcard .idx   { font-size:10px; color:#7d8590; margin-top:5px; }
+.plus  { border-color:#22d3ee; box-shadow:0 0 12px rgba(34,211,238,.40); }
+.plus  .glyph { color:#22d3ee; }
+.cross { border-color:#f472b6; box-shadow:0 0 12px rgba(244,114,182,.40); }
+.cross .glyph { color:#f472b6; }
+
+/* kept / dropped strip */
+.mstrip { display:flex; flex-wrap:wrap; gap:5px; margin:8px 0; }
+.mcell  { width:22px; height:22px; border-radius:5px; background:#3a3f47; }
+.mcell.good { background:#22e07a; box-shadow:0 0 9px rgba(34,224,122,.55); }
+
+/* verdict banners */
+.verdict { border-radius:12px; padding:16px 20px; margin:12px 0; font-size:1.05rem; }
+.verdict.safe { background:rgba(34,224,122,.12); border:1px solid #22e07a; color:#8ff7bd; }
+.verdict.spy  { background:rgba(255,84,112,.12); border:1px solid #ff5470; color:#ff9fb0; }
+
+/* legend */
+.legend { display:flex; flex-wrap:wrap; gap:18px; font-size:.9rem;
+          color:#adbac7; margin:6px 0 2px; }
+.legend b { font-size:1.1rem; }
+</style>
+""", unsafe_allow_html=True)
+
+st.title("Quantum Key Distribution - Interactive Platform")
 st.write(
     "A single platform for students learning BB84, educators building curriculum, "
     "and industry professionals assessing the quantum threat to classical cryptography."
 )
 
 tab_student, tab_educator, tab_industry = st.tabs(
-    ["Students — BB84 Simulator", "Educators — Teaching Modules", "Industry — Quantum Readiness"]
+    ["Students - BB84 Simulator", "Educators - Teaching Modules", "Industry - Quantum Readiness"]
 )
 
 
@@ -21,15 +53,20 @@ tab_student, tab_educator, tab_industry = st.tabs(
 
 BASES = ["+", "×"]
 
-PHOTON_STATE = {
-    (0, "+"): "|0⟩  (vertical)",
-    (1, "+"): "|1⟩  (horizontal)",
-    (0, "×"): "|+⟩  (diagonal 45°)",
-    (1, "×"): "|−⟩  (anti-diagonal 135°)",
+# Plain-language names for the two "filter settings" a photon can be sent with.
+BASIS_NAME = {"+": "straight (+)", "×": "diagonal (×)"}
+
+# Each (bit, filter) is drawn as one tilted line - the photon's polarisation.
+POL_GLYPH = {
+    (0, "+"): "│",   # vertical
+    (1, "+"): "─",   # horizontal
+    (0, "×"): "╱",   # 45 degrees
+    (1, "×"): "╲",   # 135 degrees
 }
 
 
 def measure(bit: int, sender_basis: str, receiver_basis: str) -> int:
+    """Same filter -> Bob gets the right bit. Wrong filter -> a random coin flip."""
     if receiver_basis == sender_basis:
         return bit
     return random.randint(0, 1)
@@ -89,242 +126,264 @@ def run_bb84(num_bits: int, eve_present: bool, sample_fraction: float) -> dict:
     )
 
 
-def _hl(row, col, yes_color="#d4edda", no_color="#f8d7da"):
-    color = yes_color if row[col] == "Yes" else no_color
-    return [f"background-color: {color}"] * len(row)
+# Vivid colours that stand out on a black background.
+C_GOOD = "#22e07a"   # green - filters matched / bits agree
+C_BAD  = "#ff5470"   # red   - mismatch / error
+C_WARN = "#ffb020"   # amber - the spy disturbed this photon
 
-hl_bob     = lambda row: _hl(row, "Bases match")
-hl_eve     = lambda row: _hl(row, "Bases match", no_color="#fff3cd")
-hl_sifted  = lambda row: _hl(row, "Agree")
-hl_sample  = lambda row: _hl(row, "Match")
+
+def _row_color(row, col, yes=C_GOOD, no=C_BAD):
+    bg = yes if row[col] == "Yes" else no
+    return [f"background-color: {bg}; color: #08130c; font-weight: 600"] * len(row)
+
+hl_bob    = lambda row: _row_color(row, "Same filter")
+hl_eve    = lambda row: _row_color(row, "Same filter", no=C_WARN)
+hl_sifted = lambda row: _row_color(row, "Agree")
+hl_sample = lambda row: _row_color(row, "Match")
+
+
+def photon_cards(states) -> str:
+    """A row of glowing cards, one per photon, tilted to show its polarisation."""
+    cells = []
+    for i, (bit, basis) in enumerate(states, start=1):
+        cls   = "plus" if basis == "+" else "cross"
+        glyph = POL_GLYPH[(bit, basis)]
+        cells.append(
+            f"<div class='pcard {cls}'><div class='glyph'>{glyph}</div>"
+            f"<div class='idx'>#{i}</div></div>"
+        )
+    return "<div class='prow'>" + "".join(cells) + "</div>"
+
+
+def kept_strip(flags) -> str:
+    """A row of small squares: green where the filters matched (bit kept), grey where not."""
+    cells = "".join(
+        f"<div class='mcell{' good' if ok else ''}'></div>" for ok in flags
+    )
+    return "<div class='mstrip'>" + cells + "</div>"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 1 — STUDENTS
+# TAB 1 - STUDENTS
 # ═════════════════════════════════════════════════════════════════════════════
 
 with tab_student:
 
-    st.subheader("BB84 Protocol — Step-by-step Simulator")
+    st.subheader("BB84: share a secret key a spy can't steal")
     st.write(
-        "Work through every phase of the BB84 quantum key distribution protocol. "
-        "Adjust the parameters below, toggle Eve on and off, and observe how eavesdropping "
-        "leaves a detectable signature in the error rate."
+        "Alice wants to send Bob a secret key, a string of 0s and 1s, using single particles "
+        "of light (photons). Quantum physics makes it impossible for a spy to copy those photons "
+        "without leaving fingerprints. Press Run below and watch it happen."
     )
 
-    with st.expander("Background: how does BB84 work?"):
+    with st.expander("The whole idea in 6 plain-English steps", expanded=False):
         st.markdown("""
-**The problem.** Alice and Bob want to share a secret random key over a channel Eve can monitor.
-Classical methods like Diffie-Hellman are secure only if certain maths problems are hard —
-a large quantum computer breaks them. BB84 uses *quantum mechanics* instead.
-
-**Why eavesdropping is detectable.**
-The no-cloning theorem states that an arbitrary unknown quantum state cannot be copied perfectly.
-If Eve intercepts a photon, she must measure it in *some* basis and then re-send a fresh photon.
-Whenever she picks the wrong basis she disturbs the state irreversibly — that disturbance shows
-up as errors that Alice and Bob would not otherwise see.
-
-**The four BB84 states.**
-""")
-        st.table(pd.DataFrame({
-            "Bit": ["0", "1"],
-            "Rectilinear basis (+)": ["|0⟩  vertical", "|1⟩  horizontal"],
-            "Diagonal basis (×)":    ["|+⟩  diagonal 45°", "|−⟩  anti-diagonal 135°"],
-        }))
-        st.markdown("""
-**The five phases:**
-1. Alice sends N photons, each in a randomly chosen state.
-2. Eve (optionally) intercepts, measures in a random basis, and re-sends.
-3. Bob measures each photon in a randomly chosen basis.
-4. Sifting — they compare bases publicly and discard mismatches (~50% survive).
-5. QBER check — a sample of sifted bits is compared. No Eve → QBER ≈ 0%. Full attack → QBER ≈ 25%.
+1. **Alice hides each bit inside one photon**, using a randomly chosen *filter*:
+   **straight (+)** or **diagonal (×)**. Think of the filter as a secret tilt.
+2. **Bob can't know which filter Alice used**, so for each photon he simply guesses a filter.
+3. **The quantum rule:** if Bob guesses the *same* filter, he reads Alice's bit perfectly.
+   If he guesses the *wrong* filter, he gets a useless coin-flip.
+4. **They compare filters out loud** (never the bits) and keep only the photons where their
+   filters matched. About half survive, and those matching bits become the shared key.
+5. **A spy is forced to guess filters too.** She can't copy a photon (the no-cloning rule), so
+   every wrong guess scrambles it and creates errors Alice and Bob can spot.
+6. **They spot-check a few bits.** Almost no errors means the line is clean, so keep the key.
+   Lots of errors means a spy was listening, so throw it away and try again.
 """)
 
-    # Controls in a horizontal row
+    st.markdown(
+        "<div class='legend'>"
+        "<span><b style='color:#22d3ee'>│ ─</b> &nbsp;straight (+) filter</span>"
+        "<span><b style='color:#f472b6'>╱ ╲</b> &nbsp;diagonal (×) filter</span>"
+        "<span><b style='color:#22e07a'>■</b> &nbsp;filters matched</span>"
+        "<span><b style='color:#ff5470'>■</b> &nbsp;mismatch / error</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("Advanced settings (optional)"):
+        sample_fraction = st.slider(
+            "Fraction of the shared key to spot-check for a spy", 0.10, 0.50, 0.30, 0.05
+        )
+        qber_threshold = st.slider("Spy-alarm threshold (% errors)", 5, 25, 15)
+
     st.divider()
-    c1, c2, c3, c4, c5 = st.columns([2, 2, 2, 2, 1])
+    c1, c2, c3 = st.columns([3, 3, 2])
     with c1:
-        num_bits = st.slider("Photons sent:", 8, 64, 20, 4)
+        num_bits = st.slider("How many photons does Alice send?", 8, 64, 24, 4)
     with c2:
-        sample_fraction = st.slider("QBER sample fraction:", 0.10, 0.50, 0.25, 0.05, format="%.2f")
+        st.write("")
+        eve_present = st.toggle("Put a spy (Eve) on the line", value=False)
     with c3:
-        qber_threshold = st.slider("Abort threshold (%):", 5, 25, 11)
-    with c4:
-        eve_present = st.toggle("Eve intercepts every photon", value=False)
-    with c5:
         st.write("")
-        st.write("")
-        run = st.button("Run", type="primary", use_container_width=True)
+        run = st.button("Run the demo", type="primary", use_container_width=True)
 
     st.divider()
 
     if not run:
-        st.info("Set parameters above and click **Run** to begin.")
+        st.info("Choose your settings above and press **Run the demo**.")
     else:
         sim  = run_bb84(num_bits, eve_present, sample_fraction)
         step = 0
 
-        # Step 1 — Alice prepares
+        # Step - Alice sends photons
         step += 1
-        st.header(f"Step {step} — Alice prepares and sends photons")
+        st.header(f"Step {step} · Alice sends her photons")
         st.write(
-            "Alice generates a random bit string and independently picks a random basis per bit. "
-            "The (bit, basis) pair determines the polarisation state of each photon she sends."
+            "For each photon Alice picks a random bit and a random filter, then sends it down the line. "
+            "Every card below is one photon, tilted to show how it is polarised. "
+            "Cyan cards use the straight (+) filter; pink cards use the diagonal (×) filter."
         )
-        df_alice = pd.DataFrame({
-            "Photon":      range(1, num_bits + 1),
-            "Alice bit":   sim["alice_bits"],
-            "Alice basis": sim["alice_bases"],
-            "State sent":  [PHOTON_STATE[(b, bs)]
-                            for b, bs in zip(sim["alice_bits"], sim["alice_bases"])],
-        })
-        st.dataframe(df_alice, use_container_width=True, hide_index=True)
+        alice_states = list(zip(sim["alice_bits"], sim["alice_bases"]))
+        st.markdown(photon_cards(alice_states), unsafe_allow_html=True)
+        st.caption(f"Alice sent {num_bits} photons carrying {num_bits} secret bits.")
 
-        # Step 2 — Eve (optional)
+        # Step - Eve (optional)
         if eve_present:
             step += 1
-            st.header(f"Step {step} — Eve intercepts")
+            st.header(f"Step {step} · The spy (Eve) secretly measures")
             st.write(
-                "Eve measures each photon in a randomly chosen basis and re-sends a fresh photon. "
-                "She cannot clone the original — the no-cloning theorem forbids it. "
-                "When her basis matches Alice's (green), no disturbance is introduced. "
-                "When it differs (yellow), the photon she re-sends is in a different state, "
-                "which will eventually produce errors in the QBER check."
+                "Eve grabs every photon, but she has to guess a filter too, and she can't copy a "
+                "photon to check later. When she guesses right (green) she gets away clean. When she "
+                "guesses wrong (amber) she scrambles the photon and re-sends the wrong thing, which "
+                "turns into errors Alice and Bob will notice."
             )
             df_eve = pd.DataFrame({
-                "Photon":        range(1, num_bits + 1),
-                "Alice basis":   sim["alice_bases"],
-                "Eve basis":     sim["eve_bases"],
-                "Bases match":   ["Yes" if a == e else "No"
-                                  for a, e in zip(sim["alice_bases"], sim["eve_bases"])],
-                "Eve measured":  sim["eve_bits"],
-                "State re-sent": [PHOTON_STATE[(b, bs)]
-                                  for b, bs in zip(sim["eve_bits"], sim["eve_bases"])],
+                "Photon":       range(1, num_bits + 1),
+                "Alice filter": [BASIS_NAME[b] for b in sim["alice_bases"]],
+                "Eve's guess":  [BASIS_NAME[b] for b in sim["eve_bases"]],
+                "Same filter":  ["Yes" if a == e else "No"
+                                 for a, e in zip(sim["alice_bases"], sim["eve_bases"])],
             })
             st.dataframe(df_eve.style.apply(hl_eve, axis=1),
                          use_container_width=True, hide_index=True)
             n_right = sum(a == e for a, e in zip(sim["alice_bases"], sim["eve_bases"]))
             st.write(
-                f"Eve guessed the correct basis for **{n_right} / {num_bits}** photons. "
-                f"She introduced potential errors into the remaining {num_bits - n_right}."
+                f"Eve guessed right on **{n_right} of {num_bits}** photons "
+                f"and scrambled the other **{num_bits - n_right}**."
             )
 
-        # Step — Bob measures
+        # Step - Bob measures
         step += 1
-        st.header(f"Step {step} — Bob measures")
+        st.header(f"Step {step} · Bob measures with his own random filters")
         st.write(
-            "Bob independently picks a random measurement basis per photon. "
-            "Matching basis (green) → deterministic correct result. "
-            "Wrong basis (red) → random outcome; that photon is discarded in sifting."
+            "Bob also guesses a filter for each photon. "
+            "Green means his filter matched Alice's, so his bit is trustworthy. "
+            "Red means a mismatch, so his result is a useless coin-flip that gets thrown away."
         )
         df_bob = pd.DataFrame({
             "Photon":       range(1, num_bits + 1),
-            "Alice basis":  sim["alice_bases"],
-            "Bob basis":    sim["bob_bases"],
-            "Bases match":  ["Yes" if a == b else "No"
+            "Alice filter": [BASIS_NAME[b] for b in sim["alice_bases"]],
+            "Bob filter":   [BASIS_NAME[b] for b in sim["bob_bases"]],
+            "Same filter":  ["Yes" if a == b else "No"
                              for a, b in zip(sim["alice_bases"], sim["bob_bases"])],
             "Alice bit":    sim["alice_bits"],
-            "Bob result":   sim["bob_bits"],
+            "Bob bit":      sim["bob_bits"],
         })
         st.dataframe(df_bob.style.apply(hl_bob, axis=1),
                      use_container_width=True, hide_index=True)
+        st.markdown(kept_strip(sim["sifted_mask"]), unsafe_allow_html=True)
         n_match = sum(sim["sifted_mask"])
-        st.write(
-            f"Bob's basis matched Alice's for **{n_match} / {num_bits}** photons "
-            f"({100 * n_match / num_bits:.0f}%). Only these survive sifting."
+        st.caption(
+            f"Green squares = filters matched, so the bit is kept. "
+            f"{n_match} of {num_bits} photons survive (about half, as expected)."
         )
 
-        # Step — Sifting
+        # Step - Keep only the matches
         step += 1
-        st.header(f"Step {step} — Sifting")
+        st.header(f"Step {step} · Keep only the matching photons")
         st.write(
-            "Alice and Bob announce their bases over a public classical channel — not the bit values. "
-            "Photons where bases differ are discarded. The survivors form the sifted key. "
-            "Eve can hear this exchange, but learning the bases reveals nothing about the bit values."
+            "Alice and Bob say their filters out loud (not the bits) and throw away every mismatch. "
+            "What is left is their shared key. When there is no spy, Alice's bit should equal Bob's bit "
+            "on every row."
         )
         sifted_idx = sim["sifted_idx"]
 
         if not sifted_idx:
-            st.warning("No photons survived sifting. Try running again.")
+            st.warning("No photons happened to match this time. Try running again.")
         else:
             df_sifted = pd.DataFrame({
-                "Original photon #": [i + 1 for i in sifted_idx],
-                "Shared basis":      [sim["alice_bases"][i] for i in sifted_idx],
-                "Alice bit":         sim["alice_sifted"],
-                "Bob bit":           sim["bob_sifted"],
-                "Agree":             ["Yes" if a == b else "No"
-                                      for a, b in zip(sim["alice_sifted"], sim["bob_sifted"])],
+                "Photon #":    [i + 1 for i in sifted_idx],
+                "Filter used": [BASIS_NAME[sim["alice_bases"][i]] for i in sifted_idx],
+                "Alice bit":   sim["alice_sifted"],
+                "Bob bit":     sim["bob_sifted"],
+                "Agree":       ["Yes" if a == b else "No"
+                                for a, b in zip(sim["alice_sifted"], sim["bob_sifted"])],
             })
             st.dataframe(df_sifted.style.apply(hl_sifted, axis=1),
                          use_container_width=True, hide_index=True)
             n_sifted = len(sifted_idx)
             n_agree  = sum(a == b for a, b in zip(sim["alice_sifted"], sim["bob_sifted"]))
             st.write(
-                f"Sifted key: **{n_sifted} bits**. "
+                f"Shared key so far: **{n_sifted} bits**. "
                 f"Alice and Bob agree on **{n_agree}** and disagree on **{n_sifted - n_agree}**."
             )
 
-            # Step — QBER
+            # Step - Spot-check for a spy
             step += 1
-            st.header(f"Step {step} — QBER estimation")
+            st.header(f"Step {step} · Spot-check for a spy")
             st.write(
-                f"A random sample of **{len(sim['sample_pos'])} sifted bits** "
-                f"({sample_fraction * 100:.0f}%) is compared publicly. "
-                "These bits are then permanently discarded. "
-                "The fraction that disagrees is the Quantum Bit Error Rate (QBER)."
+                f"They publicly reveal and compare **{len(sim['sample_pos'])}** of the shared bits "
+                "(then throw those away, since they are now public). The share that disagrees is the "
+                "**error rate**. A clean line is near 0%; a spy pushes it up toward 25%."
             )
             df_sample = pd.DataFrame({
-                "Sifted position": [p + 1 for p in sim["sample_pos"]],
-                "Alice bit":       sim["sample_alice"],
-                "Bob bit":         sim["sample_bob"],
-                "Match":           ["Yes" if a == b else "No"
-                                    for a, b in zip(sim["sample_alice"], sim["sample_bob"])],
+                "Shared bit #": [p + 1 for p in sim["sample_pos"]],
+                "Alice bit":    sim["sample_alice"],
+                "Bob bit":      sim["sample_bob"],
+                "Match":        ["Yes" if a == b else "No"
+                                 for a, b in zip(sim["sample_alice"], sim["sample_bob"])],
             })
             st.dataframe(df_sample.style.apply(hl_sample, axis=1),
                          use_container_width=True, hide_index=True)
 
             qber_pct = sim["qber"] * 100
             q1, q2, q3 = st.columns(3)
-            q1.metric("Bits sampled", len(sim["sample_pos"]))
-            q2.metric("Errors found", sim["errors"])
-            q3.metric("QBER",         f"{qber_pct:.1f}%")
+            q1.metric("Bits checked",    len(sim["sample_pos"]))
+            q2.metric("Mismatches",      sim["errors"])
+            q3.metric("Error rate",      f"{qber_pct:.0f}%")
 
             if qber_pct > qber_threshold:
-                st.error(
-                    f"QBER = {qber_pct:.1f}% exceeds {qber_threshold}%. Protocol aborted. "
-                    "Alice and Bob discard everything and retry on a different channel."
+                st.markdown(
+                    f"<div class='verdict spy'>🚨 <b>Spy detected.</b> The error rate of "
+                    f"{qber_pct:.0f}% is above the {qber_threshold}% alarm line. "
+                    "Alice and Bob throw the whole key away and try a fresh line.</div>",
+                    unsafe_allow_html=True,
                 )
             else:
-                st.success(
-                    f"QBER = {qber_pct:.1f}% is within {qber_threshold}%. Channel accepted as secure."
+                st.markdown(
+                    f"<div class='verdict safe'>✅ <b>The line is clean.</b> The error rate of "
+                    f"{qber_pct:.0f}% is under the {qber_threshold}% alarm line, so no one was "
+                    "listening. The key is safe to use.</div>",
+                    unsafe_allow_html=True,
                 )
 
             if eve_present:
-                st.info(
-                    "Expected QBER with a full intercept-resend attack: **25%**. "
-                    "Eve guesses the wrong basis 50% of the time; on those photons Bob's "
-                    "measurement in Alice's basis is random → error probability = 0.5 × 0.5 = 0.25."
+                st.caption(
+                    "Why about 25%? A spy on every photon guesses the wrong filter half the time, and "
+                    "each wrong guess flips Bob's bit half the time: 0.5 × 0.5 = 0.25. "
+                    "(Physicists call this error rate the QBER.)"
                 )
             else:
-                st.info(
-                    "Expected QBER with no eavesdropping on an ideal channel: **0%**. "
-                    "Real systems see 1–5% from detector noise and optical misalignment."
+                st.caption(
+                    "On an ideal spy-free line the error rate is 0%. Real hardware still sees a few "
+                    "percent from noise. (Physicists call this error rate the QBER.)"
                 )
 
-            # Step — Final key
+            # Step - Final key
             step += 1
-            st.header(f"Step {step} — Final shared key")
+            st.header(f"Step {step} · Your shared secret key")
 
             if qber_pct > qber_threshold:
-                st.write("Protocol aborted due to high QBER. No key established.")
+                st.write("A spy was detected, so no key is kept. Run it again on a clean line.")
             elif not sim["alice_key"]:
-                st.warning("No bits remain after QBER sampling. Increase photon count and run again.")
+                st.warning("No bits were left after the spot-check. Send more photons and run again.")
             else:
                 st.write(
-                    "The remaining sifted bits form the raw shared key. "
-                    "A production system would follow this with **error correction** (e.g., Cascade or LDPC) "
-                    "and **privacy amplification** (hashing the string down to remove any partial "
-                    "information Eve gathered). Both are skipped here."
+                    "The bits left over after the spot-check are the shared secret key. "
+                    "A real system would then run a quick clean-up (error correction) and a scramble "
+                    "step (privacy amplification) to erase anything a spy might have half-learned. "
+                    "Those are skipped here."
                 )
 
                 kc1, kc2 = st.columns(2)
@@ -337,23 +396,23 @@ up as errors that Alice and Bob would not otherwise see.
 
                 n_key = len(sim["alice_key"])
                 if sim["alice_key"] == sim["bob_key"]:
-                    st.success(f"Keys match. Shared secret: **{n_key} bits**.")
+                    st.success(f"The two keys are identical. Shared secret: **{n_key} bits**.")
                 else:
                     n_diff = sum(a != b for a, b in zip(sim["alice_key"], sim["bob_key"]))
-                    st.warning(f"Keys differ at {n_diff} / {n_key} positions. Error correction needed.")
+                    st.warning(f"The keys differ at {n_diff} of {n_key} bits, which the clean-up step would fix.")
 
                 st.divider()
                 st.subheader("Run summary")
                 s1, s2, s3, s4, s5 = st.columns(5)
-                s1.metric("Photons sent",        num_bits)
-                s2.metric("Survived sifting",    n_sifted)
-                s3.metric("Sacrificed for QBER", len(sim["sample_pos"]))
-                s4.metric("Final key length",    n_key)
-                s5.metric("Key rate",            f"{n_key / num_bits * 100:.1f}%")
+                s1.metric("Photons sent",     num_bits)
+                s2.metric("Filters matched",  n_sifted)
+                s3.metric("Spent on check",   len(sim["sample_pos"]))
+                s4.metric("Final key length", n_key)
+                s5.metric("Key rate",         f"{n_key / num_bits * 100:.0f}%")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 2 — EDUCATORS
+# TAB 2 - EDUCATORS
 # ═════════════════════════════════════════════════════════════════════════════
 
 with tab_educator:
@@ -367,7 +426,7 @@ with tab_educator:
     )
 
     # ── Module 1: Why do we need secure key exchange? ────────────────────────
-    with st.expander("Module 1 — Why do we need secure key exchange?", expanded=True):
+    with st.expander("Module 1 - Why do we need secure key exchange?", expanded=True):
         st.markdown("""
 **Learning objectives**
 - Explain the difference between symmetric and asymmetric encryption.
@@ -398,9 +457,9 @@ A sufficiently powerful computer running the right algorithm could break them.
 1. Alice and Bob publicly agree on parameters *g* and *p*.
 2. Alice picks secret *a*, sends *g^a mod p* to Bob.
 3. Bob picks secret *b*, sends *g^b mod p* to Alice.
-4. Both compute *g^(ab) mod p* — this is the shared secret.
+4. Both compute *g^(ab) mod p* - this is the shared secret.
 5. An eavesdropper sees *g^a mod p* and *g^b mod p*, but computing *g^(ab) mod p* from these
-   requires solving the discrete logarithm — hard classically, easy on a quantum computer (Shor, 1994).
+   requires solving the discrete logarithm - hard classically, easy on a quantum computer (Shor, 1994).
 
 ---
 
@@ -413,7 +472,7 @@ A sufficiently powerful computer running the right algorithm could break them.
 """)
 
     # ── Module 2: RSA ─────────────────────────────────────────────────────────
-    with st.expander("Module 2 — RSA: Key Generation, Encryption, and the Factoring Problem"):
+    with st.expander("Module 2 - RSA: Key Generation, Encryption, and the Factoring Problem"):
         st.markdown("""
 **Learning objectives**
 - Describe RSA key generation step by step.
@@ -425,7 +484,7 @@ A sufficiently powerful computer running the right algorithm could break them.
 
 **What problem does RSA solve?**
 
-Before RSA (Rivest, Shamir, Adleman, 1977), two parties had to share a secret key in advance —
+Before RSA (Rivest, Shamir, Adleman, 1977), two parties had to share a secret key in advance -
 by courier, phone, or in person. RSA allows two strangers to exchange encrypted messages over
 a public channel with no prior contact.
 
@@ -439,8 +498,8 @@ a public channel with no prior contact.
 5. Compute the private exponent *d* as the modular inverse of *e*: *d = e⁻¹ mod φ(n)*.
    This means *e × d ≡ 1 (mod φ(n))*.
 
-**Public key**: *(n, e)* — shared openly.
-**Private key**: *(n, d)* — kept secret. (Equivalently, the factorisation *p, q*.)
+**Public key**: *(n, e)* - shared openly.
+**Private key**: *(n, d)* - kept secret. (Equivalently, the factorisation *p, q*.)
 
 **Encryption** (sender knows *(n, e)*):
 *c = mᵉ mod n*
@@ -454,7 +513,7 @@ This works because Euler's theorem guarantees *(mᵉ)ᵈ = m^(ed) ≡ m (mod n)*
 **Why it is secure (classically)**
 
 To recover *d* from the public key *(n, e)*, an attacker must compute *φ(n) = (p−1)(q−1)*,
-which requires knowing *p* and *q* — i.e., factoring *n*.
+which requires knowing *p* and *q* - i.e., factoring *n*.
 
 The best known classical factoring algorithm, the General Number Field Sieve (GNFS), runs in
 sub-exponential time roughly *exp(O((log n)^(1/3) (log log n)^(2/3)))*.
@@ -482,7 +541,7 @@ classical computer. This is why RSA-2048 is currently considered safe against cl
 """)
 
     # ── Module 3: ECC ─────────────────────────────────────────────────────────
-    with st.expander("Module 3 — Elliptic Curve Cryptography (ECC)"):
+    with st.expander("Module 3 - Elliptic Curve Cryptography (ECC)"):
         st.markdown("""
 **Learning objectives**
 - Describe what an elliptic curve is over a finite field.
@@ -558,10 +617,10 @@ Critical: *k* must be uniformly random and never reused. The Sony PlayStation 3 
 extracted in 2010 because their ECDSA implementation used a fixed *k*.
 
 **Common curves**
-- **NIST P-256 / secp256r1** — standard in TLS, used by most browsers and servers.
-- **X25519 (Curve25519)** — preferred for ECDH; designed to resist several implementation
+- **NIST P-256 / secp256r1** - standard in TLS, used by most browsers and servers.
+- **X25519 (Curve25519)** - preferred for ECDH; designed to resist several implementation
   attacks; now widely used in TLS 1.3, Signal, WireGuard.
-- **secp256k1** — Bitcoin and Ethereum signing (ECDSA).
+- **secp256k1** - Bitcoin and Ethereum signing (ECDSA).
 
 ---
 
@@ -577,7 +636,7 @@ extracted in 2010 because their ECDSA implementation used a fixed *k*.
 """)
 
     # ── Module 4: Shor's Algorithm ────────────────────────────────────────────
-    with st.expander("Module 4 — Shor's Algorithm: How Quantum Computers Break RSA and ECC"):
+    with st.expander("Module 4 - Shor's Algorithm: How Quantum Computers Break RSA and ECC"):
         st.markdown("""
 **Learning objectives**
 - Explain at a conceptual level how Shor's algorithm reduces integer factoring to period finding.
@@ -592,8 +651,8 @@ extracted in 2010 because their ECDSA implementation used a fixed *k*.
 In 1994, Peter Shor (then at Bell Labs) published an algorithm that runs on a quantum computer
 and solves two problems in polynomial time:
 
-1. **Integer factoring** — given *n*, find *p* and *q* such that *n = p × q*.
-2. **Discrete logarithm** — given *g, h, p*, find *x* such that *g^x ≡ h (mod p)*.
+1. **Integer factoring** - given *n*, find *p* and *q* such that *n = p × q*.
+2. **Discrete logarithm** - given *g, h, p*, find *x* such that *g^x ≡ h (mod p)*.
 
 These two problems are the security foundations of RSA and Diffie-Hellman respectively.
 The elliptic curve discrete logarithm problem (ECDLP) is also solved by a generalisation of
@@ -610,10 +669,10 @@ of the function:
 for a randomly chosen *a* coprime to *n*.
 
 The period *r* is the smallest positive integer such that *aʳ ≡ 1 (mod n)*.
-Once *r* is known, one can compute *gcd(a^(r/2) ± 1, n)* — this yields non-trivial factors of
+Once *r* is known, one can compute *gcd(a^(r/2) ± 1, n)* - this yields non-trivial factors of
 *n* with high probability (roughly 50% per attempt; a few repetitions suffice).
 
-Finding *r* classically is just as hard as factoring — it requires evaluating *f* exponentially
+Finding *r* classically is just as hard as factoring - it requires evaluating *f* exponentially
 many times. The quantum speedup comes from finding *r* efficiently.
 
 **Where the quantum speedup comes from**
@@ -626,13 +685,13 @@ and evaluate *f(x)* for all *x* at once, producing:
 
 *(1/√N) Σ|x⟩|f(x)⟩*
 
-This is not useful directly — measuring collapses it to a single value. But applying the
+This is not useful directly - measuring collapses it to a single value. But applying the
 **Quantum Fourier Transform (QFT)** to the *x* register transforms this superposition into one
 that is peaked at multiples of *1/r*. Measuring then gives a value close to *j/r* for some
 integer *j*, from which *r* can be extracted using classical continued fraction algorithms.
 
 The classical DFT runs in O(N log N) for N points. The QFT runs in O(log² N) on a quantum
-computer — an exponential improvement. This is what gives Shor's algorithm its power.
+computer - an exponential improvement. This is what gives Shor's algorithm its power.
 
 **Resource requirements**
 
@@ -667,7 +726,7 @@ replacement, while AES-256 and SHA-3 can be retained with appropriate parameter 
 ---
 
 **Discussion questions**
-1. Shor's algorithm is probabilistic — it succeeds with probability roughly 1/2 per run and must
+1. Shor's algorithm is probabilistic - it succeeds with probability roughly 1/2 per run and must
    be repeated. How does this affect the practical time to break RSA-2048?
 2. The QFT requires coherent superposition across many qubits for many gate operations.
    What physical challenges make this hard to achieve, and how do quantum error correction
@@ -678,7 +737,7 @@ replacement, while AES-256 and SHA-3 can be retained with appropriate parameter 
 """)
 
     # ── Module 5: Quantum mechanics background ────────────────────────────────
-    with st.expander("Module 5 — Quantum mechanics background for QKD"):
+    with st.expander("Module 5 - Quantum mechanics background for QKD"):
         st.markdown("""
 **Learning objectives**
 - Define quantum superposition and explain what "collapsing" a superposition means.
@@ -690,12 +749,12 @@ replacement, while AES-256 and SHA-3 can be retained with appropriate parameter 
 
 **Polarisation as a qubit**
 
-Light is an electromagnetic wave, and its electric field oscillates in a direction — the
+Light is an electromagnetic wave, and its electric field oscillates in a direction - the
 *polarisation*. A photon can be polarised vertically (|0⟩), horizontally (|1⟩), at 45° (|+⟩),
 or at 135° (|−⟩). A polarising filter lets through only photons aligned with it.
 
 In quantum mechanics, a photon does not have a single definite polarisation until it is measured.
-Before measurement, it exists in a **superposition** — a combination of two basis states.
+Before measurement, it exists in a **superposition** - a combination of two basis states.
 
 **Measurement and basis**
 
@@ -706,7 +765,7 @@ If you instead measure that same |0⟩ photon with a diagonal filter (×):
 - 45° filter: 50% probability of passing → random outcome, 0 or 1 with equal probability.
 
 After the measurement, the photon's state has been **projected** (collapsed) into one of the
-diagonal basis states — the original vertical polarisation is gone.
+diagonal basis states - the original vertical polarisation is gone.
 
 **The no-cloning theorem (Wootters & Zurek, 1982)**
 
@@ -726,13 +785,13 @@ leaves a trace.
 **Teaching note**
 A good analogy: imagine a die that is mid-roll, with no definite face up. Once you look at it
 (measure it), it "collapses" to a definite face. If you then want to tell someone the number, you
-already know it — but the die is now *committed* to that face. The original mid-roll state is gone.
+already know it - but the die is now *committed* to that face. The original mid-roll state is gone.
 The analogy breaks down (dice are classical) but it conveys the irreversibility of measurement.
 
 ---
 
 **Discussion questions**
-1. The no-cloning theorem is a *theorem* — it follows from the linearity of quantum mechanics.
+1. The no-cloning theorem is a *theorem* - it follows from the linearity of quantum mechanics.
    What does linearity mean here, and why does cloning violate it?
 2. Is the no-cloning theorem a practical limitation or a fundamental one? Could a future technology
    circumvent it?
@@ -741,7 +800,7 @@ The analogy breaks down (dice are classical) but it conveys the irreversibility 
 """)
 
     # ── Module 6: The BB84 protocol ───────────────────────────────────────────
-    with st.expander("Module 6 — The BB84 protocol in depth"):
+    with st.expander("Module 6 - The BB84 protocol in depth"):
         st.markdown("""
 **Learning objectives**
 - Describe each of the five phases of BB84 with physical justification.
@@ -751,7 +810,7 @@ The analogy breaks down (dice are classical) but it conveys the irreversibility 
 
 ---
 
-**Phase 1 — Quantum transmission**
+**Phase 1 - Quantum transmission**
 
 Alice randomly generates a bit string *b₁b₂…bₙ* and a basis string *θ₁θ₂…θₙ*, each bit chosen
 uniformly at random. She prepares photon *i* in the state determined by *(bᵢ, θᵢ)*:
@@ -764,7 +823,7 @@ uniformly at random. She prepares photon *i* in the state determined by *(bᵢ, 
 She sends the photons one at a time through the quantum channel (an optical fibre or free-space
 link). *No classical information travels on this channel during transmission.*
 
-**Phase 2 — Bob's measurement**
+**Phase 2 - Bob's measurement**
 
 Bob independently picks a random basis *φᵢ* for each photon and measures it.
 - If *φᵢ = θᵢ*: measurement is in the correct basis → Bob recovers *bᵢ* exactly.
@@ -772,16 +831,16 @@ Bob independently picks a random basis *φᵢ* for each photon and measures it.
 
 Bob records his basis choices and measurement outcomes.
 
-**Phase 3 — Sifting**
+**Phase 3 - Sifting**
 
 Over a public classical channel (authenticated but not secret), Alice announces *θ₁…θₙ*.
 Bob announces *φ₁…φₙ*. Both discard positions where *θᵢ ≠ φᵢ*. On average, ~50% survive.
 The surviving bits are the *sifted key*.
 
 What Eve learns: the bases of sifted photons. This is useless because the bit value is
-*orthogonal* information — knowing the basis of a sifted photon tells you nothing about the bit.
+*orthogonal* information - knowing the basis of a sifted photon tells you nothing about the bit.
 
-**Phase 4 — QBER estimation**
+**Phase 4 - QBER estimation**
 
 Alice and Bob publicly sacrifice a random subset *S* of the sifted key and compare values.
 QBER = |{i ∈ S : Alice's bit ≠ Bob's bit}| / |S|.
@@ -792,12 +851,12 @@ Derivation of expected QBER under full intercept-resend:
   measures that photon in the wrong basis → random result → error with probability 1/2.
 - Combined: *P(error in sifted key) = 1/2 × 1/2 = 1/4 = 25%*.
 
-**Phase 5 — Key reconciliation and privacy amplification**
+**Phase 5 - Key reconciliation and privacy amplification**
 
 If QBER is below threshold:
-1. **Error correction** — Alice and Bob run a classical error-correcting protocol (e.g., Cascade)
+1. **Error correction** - Alice and Bob run a classical error-correcting protocol (e.g., Cascade)
    to make their sifted keys identical. This leaks some information to Eve.
-2. **Privacy amplification** — they apply a universal hash function to compress the key.
+2. **Privacy amplification** - they apply a universal hash function to compress the key.
    Compression by *k* bits reduces Eve's information exponentially in *k*, making her expected
    knowledge about the final key essentially zero.
 
@@ -815,7 +874,7 @@ The final string is the **quantum-secure shared key**.
 """)
 
     # ── Module 7: Security analysis ───────────────────────────────────────────
-    with st.expander("Module 7 — Security: information-theoretic vs computational"):
+    with st.expander("Module 7 - Security: information-theoretic vs computational"):
         st.markdown("""
 **Learning objectives**
 - Contrast information-theoretic security with computational security.
@@ -846,7 +905,7 @@ The original security proof (Mayers 1996, Lo & Chau 1999, Shor & Preskill 2000 s
    length of the privacy amplification parameter).
 4. The final key is ε-secure: Eve cannot distinguish it from a uniformly random string.
 
-**Practical caveats — the assumptions**
+**Practical caveats - the assumptions**
 
 The proof assumes:
 - **Perfect single-photon sources.** Real laser sources emit weak coherent pulses, not single
@@ -871,7 +930,7 @@ The proof assumes:
 """)
 
     # ── Module 8: Real-world deployments ─────────────────────────────────────
-    with st.expander("Module 8 — Real-world QKD deployments and open problems"):
+    with st.expander("Module 8 - Real-world QKD deployments and open problems"):
         st.markdown("""
 **Learning objectives**
 - Describe the main physical implementations of QKD (fibre, free-space, satellite).
@@ -890,7 +949,7 @@ Current commercial QKD systems (ID Quantique, Toshiba) operate at distances up t
 with key rates of tens of kbps.
 
 **Trusted nodes** extend range: Alice sends to a relay node over a secure QKD link, the relay
-re-encrypts and forwards to Bob. The relay must be physically trusted — a compromise point.
+re-encrypts and forwards to Bob. The relay must be physically trusted - a compromise point.
 
 **Quantum repeaters** would allow true end-to-end quantum security over arbitrary distances by
 entanglement swapping and purification. They require quantum memories (not yet available
@@ -914,7 +973,7 @@ Free-space systems are limited by atmospheric turbulence and require line-of-sig
 - Quantum repeaters with long-coherence-time memories
 - Device-independent QKD at practical rates
 - Continuous-variable (CV-QKD): using coherent states and homodyne detection rather than
-  single photons — compatible with standard telecom hardware
+  single photons - compatible with standard telecom hardware
 - Composable security proofs for finite-length keys (real-world key blocks are short)
 - Hybrid QKD + post-quantum cryptography architectures
 
@@ -938,7 +997,7 @@ Free-space systems are limited by atmospheric turbulence and require line-of-sig
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 3 — INDUSTRY
+# TAB 3 - INDUSTRY
 # ═════════════════════════════════════════════════════════════════════════════
 
 with tab_industry:
@@ -958,7 +1017,7 @@ with tab_industry:
         st.markdown("""
 In 1994, Peter Shor published a quantum algorithm that can factor integers and solve the discrete
 logarithm problem in **polynomial time** on a sufficiently large quantum computer. This directly
-breaks RSA, Diffie-Hellman, and elliptic curve cryptography (ECC) — the three algorithms that
+breaks RSA, Diffie-Hellman, and elliptic curve cryptography (ECC) - the three algorithms that
 secure virtually all internet communications today, including SWIFT messaging, TLS connections to
 banking APIs, digital signatures on securities transactions, and encrypted storage.
 
@@ -990,11 +1049,11 @@ in both directions.
     st.header("2. Harvest Now, Decrypt Later")
 
     st.warning(
-        "This is the most immediate threat for financial institutions, and it is active **today** — "
+        "This is the most immediate threat for financial institutions, and it is active **today** - "
         "not in 10–20 years."
     )
     st.markdown("""
-Adversaries — nation-state intelligence agencies are the primary concern — do not need a quantum
+Adversaries - nation-state intelligence agencies are the primary concern - do not need a quantum
 computer *now* to threaten data encrypted *now*. They can:
 
 1. **Intercept and store** encrypted network traffic, signed documents, and key exchange records today.
@@ -1026,7 +1085,7 @@ If *Z + Y > X*, you have a problem. For data with 10-year confidentiality requir
     st.markdown("""
 After an eight-year global evaluation process, NIST published three finalized **post-quantum
 cryptography (PQC)** standards in August 2024. These are drop-in replacements for current
-public-key algorithms and require only software changes — no new hardware infrastructure.
+public-key algorithms and require only software changes - no new hardware infrastructure.
 Full documentation is available on the NIST CSRC website:
 [FIPS 203 (ML-KEM)](https://csrc.nist.gov/pubs/fips/203/final) ·
 [FIPS 204 (ML-DSA)](https://csrc.nist.gov/pubs/fips/204/final) ·
@@ -1052,7 +1111,7 @@ Full documentation is available on the NIST CSRC website:
 - **TLS / API connections**: migrate to ML-KEM for key exchange in TLS 1.3. Chrome and Firefox
   already support hybrid X25519+ML-KEM. OpenSSL 3.x includes ML-KEM support.
 - **Digital signatures**: migrate signing infrastructure (code signing, document signing, certificate
-  authorities) to ML-DSA. Note that FIPS 204 signature sizes are larger than ECDSA — test for
+  authorities) to ML-DSA. Note that FIPS 204 signature sizes are larger than ECDSA - test for
   performance impact on high-volume signing systems.
 - **Certificate infrastructure**: NIST and CA/Browser Forum are coordinating on post-quantum
   X.509 certificates. Expect a multi-year transition period with hybrid certificates
@@ -1062,7 +1121,7 @@ Full documentation is available on the NIST CSRC website:
 """)
 
     # ── Section 4: QKD vs PQC ─────────────────────────────────────────────────
-    st.header("4. QKD vs Post-Quantum Cryptography — What is the Difference?")
+    st.header("4. QKD vs Post-Quantum Cryptography - What is the Difference?")
 
     st.markdown("""
 QKD and PQC are complementary, not competing, approaches to the same problem. Understanding the
@@ -1085,7 +1144,7 @@ distinction is important for investment and procurement decisions.
             "Physical laws (no-cloning theorem)",
             "Dedicated quantum channel + single-photon hardware",
             "~100–150 km per segment (trusted relays for longer)",
-            "Very high — new fibre, detectors, hardware refresh cycles",
+            "Very high - new fibre, detectors, hardware refresh cycles",
             "Lab-proven; limited commercial deployments",
             "No global interoperability standard yet",
             "Yes (for key distribution)",
@@ -1093,15 +1152,15 @@ distinction is important for investment and procurement decisions.
             "Requires a pre-shared secret or PQC for classical channel auth",
         ],
         "PQC (NIST FIPS 203/204)": [
-            "Mathematical hardness (MLWE — believed quantum-hard)",
-            "Software only — runs on existing hardware",
+            "Mathematical hardness (MLWE - believed quantum-hard)",
+            "Software only - runs on existing hardware",
             "Unlimited",
-            "Low to moderate — library + protocol updates",
+            "Low to moderate - library + protocol updates",
             "Mature algorithms; standardised Aug 2024",
-            "NIST FIPS 203, 204, 205 — global standard",
+            "NIST FIPS 203, 204, 205 - global standard",
             "Yes (assuming hardness holds)",
             "Yes",
-            "Self-contained — no pre-shared secret needed",
+            "Self-contained - no pre-shared secret needed",
         ],
     })
     st.dataframe(comparison, use_container_width=True, hide_index=True)
@@ -1114,7 +1173,7 @@ distinction is important for investment and procurement decisions.
   are available today in OpenSSL, BouncyCastle, and AWS/Azure/GCP SDK updates.
 
 - **QKD is relevant for specific high-value, fixed-topology links** where information-theoretic
-  security is required and capital expenditure is justified — for example, a data centre
+  security is required and capital expenditure is justified - for example, a data centre
   interconnect carrying real-time settlement data between two sites owned by the same institution.
 
 - **A hybrid architecture** (QKD-derived keys XOR'd with PQC-derived keys) provides the highest
@@ -1145,7 +1204,7 @@ distinction is important for investment and procurement decisions.
   See also: [PQC Integration Study](https://www.enisa.europa.eu/publications/post-quantum-cryptography-integration-study).
 - **ECB**: no dedicated PQC regulation; included in broader cyber resilience expectations (TIBER-EU).
 - **DORA** (Digital Operational Resilience Act, effective Jan 2025): requires financial entities
-  to manage ICT risk including emerging technology threats — quantum readiness will fall under scope.
+  to manage ICT risk including emerging technology threats - quantum readiness will fall under scope.
 """)
 
     with col_r2:
@@ -1182,7 +1241,7 @@ consistent with guidance from NCSC, CISA, and NIST.
 """)
 
     roadmap = pd.DataFrame({
-        "Phase":    ["1 — Inventory", "2 — Prioritise", "3 — Pilot", "4 — Migrate", "5 — Operate"],
+        "Phase":    ["1 - Inventory", "2 - Prioritise", "3 - Pilot", "4 - Migrate", "5 - Operate"],
         "Horizon":  ["Now – 12 months", "6 – 18 months", "12 – 30 months", "2 – 5 years", "Ongoing"],
         "Activities": [
             "Catalogue all cryptographic assets: algorithms, key lengths, protocols, data flows, HSMs, certificates. Identify where RSA/ECC is used.",
@@ -1195,8 +1254,8 @@ consistent with guidance from NCSC, CISA, and NIST.
     st.dataframe(roadmap, use_container_width=True, hide_index=True)
 
     st.info(
-        "**Crypto-agility** — designing systems so that the cryptographic algorithm is a "
-        "configurable parameter rather than a hardcoded assumption — is the single most valuable "
+        "**Crypto-agility** - designing systems so that the cryptographic algorithm is a "
+        "configurable parameter rather than a hardcoded assumption - is the single most valuable "
         "architectural investment a financial institution can make today. It makes the migration "
         "from classical to PQC, and any future algorithm transitions, significantly cheaper."
     )
